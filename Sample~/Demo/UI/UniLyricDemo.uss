@@ -1,0 +1,197 @@
+/* ── Root ──────────────────────────────────────────────────────── */
+.root {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 420px;
+    align-self: flex-start;
+    background-color: rgba(28, 28, 28, 0.95);
+    border-width: 1px;
+    border-color: rgb(65, 65, 65);
+    flex-direction: column;
+}
+
+/* ── Window title bar ──────────────────────────────────────────── */
+.window-titlebar {
+    background-color: rgb(50, 50, 50);
+    border-bottom-width: 1px;
+    border-color: rgb(70, 70, 70);
+    padding: 6px 12px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.window-title {
+    font-size: 16px;
+    color: rgb(210, 210, 210);
+    -unity-font-style: bold;
+    flex-grow: 1;
+}
+
+/* ── Panel ─────────────────────────────────────────────────────── */
+.panel {
+    border-bottom-width: 1px;
+    border-color: rgb(45, 45, 45);
+    padding: 8px 12px;
+    flex-shrink: 0;
+}
+
+.catalog-panel { padding-bottom: 0; }
+
+/* ── Panel title ───────────────────────────────────────────────── */
+.panel-title {
+    font-size: 14px;
+    color: rgb(180, 180, 180);
+    -unity-font-style: bold;
+    background-color: rgb(42, 42, 42);
+    padding: 4px 8px;
+    margin-bottom: 8px;
+    margin-left: -12px;
+    margin-right: -12px;
+    border-bottom-width: 1px;
+    border-color: rgb(55, 55, 55);
+}
+
+/* ── Row ───────────────────────────────────────────────────────── */
+.row {
+    flex-direction: row;
+    align-items: center;
+    height: 34px;
+    margin-bottom: 4px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.btn {
+    flex-grow: 1;
+    height: 32px;
+    margin-right: 6px;
+    border-radius: 3px;
+    background-color: rgb(55, 55, 55);
+    border-width: 1px;
+    border-color: rgb(78, 78, 78);
+    color: rgb(205, 205, 205);
+    font-size: 14px;
+    padding: 0;
+}
+.btn:hover        { background-color: rgb(72, 72, 72); }
+.btn:last-child   { margin-right: 0; }
+.btn-accent       { background-color: rgb(50, 85, 135); border-color: rgb(75, 115, 175); color: rgb(190, 215, 255); }
+.btn-accent:hover { background-color: rgb(65, 100, 155); }
+
+/* ── Toggle ────────────────────────────────────────────────────── */
+.toggle { color: rgb(185, 185, 185); font-size: 14px; height: 28px; }
+
+/* ── Field label ───────────────────────────────────────────────── */
+.field-label {
+    width: 100px;
+    font-size: 14px;
+    color: rgb(165, 165, 165);
+    flex-shrink: 0;
+}
+
+/* ── Slider ────────────────────────────────────────────────────── */
+.slider {
+    flex-grow: 1;
+    margin-right: 8px;
+    margin-top: 0;
+    margin-bottom: 0;
+    height: 24px;                  /* explicit height so dragger has room */
+}
+
+.slider .unity-base-slider__input {
+    height: 24px;
+    align-items: center;
+}
+
+.slider .unity-base-slider__tracker {
+    background-color: rgb(38, 38, 38);
+    border-width: 1px;
+    border-color: rgb(80, 80, 80);
+    height: 5px;
+    border-radius: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* dragger — sits naturally in flow, no negative top */
+.slider .unity-base-slider__dragger {
+    background-color: rgb(160, 160, 160);
+    width: 14px;
+    height: 22px;
+    border-radius: 2px;
+    border-width: 1px;
+    border-color: rgb(210, 210, 210);
+    margin-top: 0;
+    top: 0;                        /* reset any inherited offset */
+    translate: 0 -9px;             /* centre vertically on the tracker */
+}
+
+.slider .unity-base-slider__dragger:hover {
+    background-color: rgb(200, 200, 200);
+}
+
+/* ── Value label ───────────────────────────────────────────────── */
+.value-label {
+    width: 52px;
+    font-size: 14px;
+    color: rgb(210, 210, 210);
+    -unity-text-align: upper-right;
+    flex-shrink: 0;
+}
+
+/* ── Dropdown ──────────────────────────────────────────────────── */
+.dropdown {
+    flex-grow: 1;
+    height: 32px;
+    min-height: 32px;
+    background-color: rgb(48, 48, 48);
+    border-color: rgb(78, 78, 78);
+    border-radius: 2px;
+    color: rgb(220, 220, 220);
+    font-size: 13px;
+    overflow: hidden;
+}
+
+.dropdown .unity-base-field__input {
+    height: 32px;
+    min-height: 32px;
+    align-items: center;
+    padding: 0 8px;
+}
+
+.dropdown .unity-text-element {
+    font-size: 13px;
+    color: rgb(0, 0, 0);
+    white-space: nowrap;
+    overflow: hidden;
+    -unity-text-align: middle-left;
+    -unity-font-style: normal;
+}
+
+.dropdown .unity-base-dropdown__label {
+    font-size: 13px;
+    color: rgb(220, 220, 220);
+    -unity-text-align: middle-left;
+}
+
+/* ── Catalog ───────────────────────────────────────────────────── */
+.catalog-list {
+    background-color: rgb(20, 20, 20);
+    max-height: 280px;
+    border-top-width: 1px;
+    border-color: rgb(50, 50, 50);
+}
+
+.catalog-list .unity-list-view__item {
+    border-bottom-width: 1px;
+    border-color: rgb(38, 38, 38);
+}
+
+/* ── Effect groups ─────────────────────────────────────────────── */
+#group-scale, #group-wave {
+    display: none;
+    border-top-width: 1px;
+    border-color: rgb(48, 48, 48);
+    padding-top: 4px;
+    margin-top: 4px;
+}

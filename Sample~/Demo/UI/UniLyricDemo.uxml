@@ -1,0 +1,64 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <Style src="project://database/Assets/Demo/UIToolKit/UniLyricDemo.uss?fileID=7433441132597879392&amp;guid=1950142c32cfd9c4ca3f8ba58bc8fa2b&amp;type=3#UniLyricDemo"/>
+    <ui:VisualElement name="root" class="root">
+        <ui:VisualElement class="window-titlebar">
+            <ui:Label text="UniLyricSync" class="window-title"/>
+        </ui:VisualElement>
+        <ui:VisualElement class="panel">
+            <ui:Label text="Playback" class="panel-title"/>
+            <ui:VisualElement class="row">
+                <ui:Button name="btn-play" text="▶ Play" class="btn btn-accent"/>
+                <ui:Button name="btn-pause" text="⏸ Pause" class="btn"/>
+                <ui:Button name="btn-stop" text="⏹ Stop" class="btn"/>
+            </ui:VisualElement>
+            <ui:VisualElement class="row">
+                <ui:Toggle name="toggle-loop" label="Loop" class="toggle"/>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement class="panel">
+            <ui:Label text="Effect" class="panel-title"/>
+            <ui:VisualElement class="row">
+                <ui:Label text="Type" class="field-label"/>
+                <ui:DropdownField name="drop-effect" class="dropdown" style="color: rgb(0, 0, 0);"/>
+            </ui:VisualElement>
+            <ui:VisualElement class="row">
+                <ui:Label text="Transition" class="field-label"/>
+                <ui:Slider name="slider-transition" low-value="0" high-value="1" value="0.08" class="slider"/>
+                <ui:Label name="label-transition" text="0.08" class="value-label"/>
+            </ui:VisualElement>
+            <ui:VisualElement name="group-scale">
+                <ui:VisualElement class="row">
+                    <ui:Label text="Scale Amt" class="field-label"/>
+                    <ui:Slider name="slider-scale-amount" low-value="1" high-value="2" value="1.15" class="slider"/>
+                    <ui:Label name="label-scale-amount" text="1.15x" class="value-label"/>
+                </ui:VisualElement>
+                <ui:VisualElement class="row">
+                    <ui:Label text="Scale Spd" class="field-label"/>
+                    <ui:Slider name="slider-scale-speed" low-value="1" high-value="30" value="8" class="slider"/>
+                    <ui:Label name="label-scale-speed" text="8.0" class="value-label"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
+            <ui:VisualElement name="group-wave">
+                <ui:VisualElement class="row">
+                    <ui:Label text="Wave Amp" class="field-label"/>
+                    <ui:Slider name="slider-wave-amp" low-value="0.5" high-value="20" value="3" class="slider"/>
+                    <ui:Label name="label-wave-amp" text="3.0px" class="value-label"/>
+                </ui:VisualElement>
+                <ui:VisualElement class="row">
+                    <ui:Label text="Wave Spd" class="field-label"/>
+                    <ui:Slider name="slider-wave-speed" low-value="1" high-value="30" value="12" class="slider"/>
+                    <ui:Label name="label-wave-speed" text="12.0" class="value-label"/>
+                </ui:VisualElement>
+                <ui:VisualElement class="row">
+                    <ui:Label text="Wave Sprd" class="field-label"/>
+                    <ui:Slider name="slider-wave-spread" low-value="0" high-value="3" value="0.9" class="slider"/>
+                    <ui:Label name="label-wave-spread" text="0.90" class="value-label"/>
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement class="panel catalog-panel">
+            <ui:Label text="Catalog" class="panel-title"/>
+            <ui:ListView name="catalog-list" selection-type="Single" fixed-item-height="40" virtualization-method="FixedHeight" class="catalog-list"/>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

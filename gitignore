@@ -1,0 +1,28 @@
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ── Temp files ────────────────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# ── NOT ignored (required for Unity packages) ─────────────────────
+# *.meta  ← never ignore, Unity needs these for GUIDs
