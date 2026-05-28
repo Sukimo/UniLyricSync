@@ -19,7 +19,7 @@ per-character colour transitions at runtime using TMP vertex colour animation.
 **Option B — UPM git URL**
 ```
 Window → Package Manager → + → Add package from git URL
-https://github.com/yourname/UniLyricSync.git
+https://github.com/Sukimo/UniLyricSync.git
 ```
 
 **Option C — Drop folder**
