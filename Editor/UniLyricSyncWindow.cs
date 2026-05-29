@@ -28,26 +28,38 @@ namespace UniLyricSync.Editor
             win.minSize = new Vector2(600, 460);
         }
 
+        // Called by UniLyricDataEditor button — opens window and loads the asset
+        public static void OpenWithData(UniLyricData data)
+        {
+            var win = GetWindow<UniLyricSyncWindow>();
+            win.titleContent = new GUIContent("UniLyricSync");
+            win.minSize = new Vector2(600, 460);
+            win._data = data;
+            win.SaveLastDataGuid();
+            win.StopPreview();
+            win.Repaint();
+        }
+
         // ── State ──────────────────────────────────────────────────────────────
         private UniLyricData _data;
 
         // Playback preview (Editor-side, uses AudioUtil reflection)
-        private bool   _isPlaying     = false;
+        private bool _isPlaying = false;
         private double _playStartTime = 0;
-        private float  _playheadTime  = 0f;
+        private float _playheadTime = 0f;
 
         // Zoom & scroll
-        private float _zoom       = 1f;    // 1 = fit full clip, 2 = 2x zoom, etc.
-        private float _scrollX    = 0f;    // normalised 0..1 scroll offset
+        private float _zoom = 1f;
+        private float _scrollX = 0f;
         private const float MinZoom = 1f;
         private const float MaxZoom = 20f;
 
         // Interaction
-        private int  _selectedMarker          = -1;
-        private int  _draggingMarker          = -1;
-        private int  _draggingMarkerWordIndex = -1;
-        private bool _isDragging              = false;
-        private bool _isScrubbing             = false;
+        private int _selectedMarker = -1;
+        private int _draggingMarker = -1;
+        private int _draggingMarkerWordIndex = -1;
+        private bool _isDragging = false;
+        private bool _isScrubbing = false;
 
         // Layout rects (computed each OnGUI)
         private Rect _rulerRect;
@@ -60,13 +72,13 @@ namespace UniLyricSync.Editor
         private const float RulerHeight = 22f;
         private const float AudioTrackHeight = 68f;
         private const float TriggerTrackHeight = 48f;
-        private const float PreviewHeight = 70f;
+        private const float PreviewHeight = 70f;   // minimum height
         private const float InspectorHeight = 36f;
         private const float LabelWidth = 90f;
 
         // Marker visuals
         private const float MarkerWidth = 2f;
-        private const float MarkerHitW = 12f; // click/drag hit area
+        private const float MarkerHitW = 12f;
 
         // GUIStyles (initialised lazily)
         private GUIStyle _trackLabelStyle;
@@ -85,7 +97,6 @@ namespace UniLyricSync.Editor
         {
             EditorApplication.update += OnEditorUpdate;
 
-            // Try to restore the last used data asset
             string guid = EditorPrefs.GetString("UniLyricSync_LastDataGuid", "");
             if (!string.IsNullOrEmpty(guid))
             {
@@ -105,7 +116,6 @@ namespace UniLyricSync.Editor
         {
             if (!_isPlaying) return;
 
-            // Advance playhead using EditorApplication.timeSinceStartup delta
             double now = EditorApplication.timeSinceStartup;
             _playheadTime = (float)(now - _playStartTime);
 
@@ -122,7 +132,6 @@ namespace UniLyricSync.Editor
         {
             InitStyles();
 
-            // ── If no data assigned, show a simple welcome screen ──────────────
             if (_data == null)
             {
                 DrawWelcome();
@@ -132,15 +141,12 @@ namespace UniLyricSync.Editor
             float y = 0f;
             float w = position.width;
 
-            // ── Toolbar ────────────────────────────────────────────────────────
             DrawToolbar(new Rect(0, y, w, 34f));
             y += 34f;
 
-            // Horizontal divider
             EditorGUI.DrawRect(new Rect(0, y, w, 0.5f), new Color(0, 0, 0, 0.4f));
             y += 1f;
 
-            // ── Compute track rects ────────────────────────────────────────────
             float trackW = w - LabelWidth;
 
             _rulerRect = new Rect(LabelWidth, y, trackW, RulerHeight);
@@ -152,53 +158,47 @@ namespace UniLyricSync.Editor
             _triggerTrackRect = new Rect(LabelWidth, y, trackW, TriggerTrackHeight);
             y += TriggerTrackHeight;
 
+            // _previewRect height is dynamic — DrawPreview sets it
             _previewRect = new Rect(0, y, w, PreviewHeight);
-            y += PreviewHeight;
+            y += PreviewHeight;  // will be corrected after DrawPreview if needed
 
             _inspectorRect = new Rect(0, y, w, InspectorHeight);
 
-            // ── Draw sections ──────────────────────────────────────────────────
             DrawRuler();
             DrawAudioTrack(new Rect(0, _audioTrackRect.y, LabelWidth, AudioTrackHeight));
             DrawTriggerTrack(new Rect(0, _triggerTrackRect.y, LabelWidth, TriggerTrackHeight));
             DrawPreview();
             DrawInspectorStrip();
 
-            // ── Lyrics popup (drawn on top) ────────────────────────────────────
             if (_showLyricsPopup)
                 DrawLyricsPopup();
 
-            // ── Scroll wheel → zoom, Alt+scroll → pan ─────────────────────────
             if (Event.current.type == EventType.ScrollWheel
                 && (new Rect(LabelWidth, 0, position.width - LabelWidth, position.height))
                    .Contains(Event.current.mousePosition))
             {
                 if (Event.current.alt)
                 {
-                    // Pan
                     _scrollX += Event.current.delta.y * 0.01f;
                     ClampScroll();
                 }
                 else
                 {
-                    // Zoom toward mouse — keep the time-under-mouse fixed
                     float tAtMouse = XToTime(Event.current.mousePosition.x);
                     _zoom = Mathf.Clamp(
                         _zoom * (Event.current.delta.y > 0 ? 0.85f : 1.18f),
                         MinZoom, MaxZoom);
 
-                    // Recalculate scrollX so tAtMouse stays under the mouse
                     if (_data.audioClip != null && _data.audioClip.length > 0f
                         && _audioTrackRect.width > 0f)
                     {
-                        float uvW      = 1f / _zoom;
-                        float frac     = (Event.current.mousePosition.x - _audioTrackRect.x)
+                        float uvW = 1f / _zoom;
+                        float frac = (Event.current.mousePosition.x - _audioTrackRect.x)
                                          / _audioTrackRect.width;
                         float normTime = tAtMouse / _data.audioClip.length;
-                        // uvX = normTime - frac*uvW  →  scrollX = uvX / (1-uvW)
-                        float uvX  = normTime - frac * uvW;
+                        float uvX = normTime - frac * uvW;
                         float denom = 1f - uvW;
-                        _scrollX   = denom > 0.0001f ? uvX / denom : 0f;
+                        _scrollX = denom > 0.0001f ? uvX / denom : 0f;
                         ClampScroll();
                     }
                 }
@@ -206,7 +206,6 @@ namespace UniLyricSync.Editor
                 Repaint();
             }
 
-            // ── Process mouse events on trigger track ──────────────────────────
             HandleTriggerTrackEvents();
         }
 
@@ -216,7 +215,6 @@ namespace UniLyricSync.Editor
         private void DrawWelcome()
         {
             GUILayout.FlexibleSpace();
-
             GUILayout.BeginVertical();
             GUILayout.Space(20);
 
@@ -263,7 +261,6 @@ namespace UniLyricSync.Editor
             GUILayout.BeginHorizontal();
             GUILayout.Space(8);
 
-            // ── Data field ────────────────────────────────────────────────────
             EditorGUI.BeginChangeCheck();
             _data = (UniLyricData)EditorGUILayout.ObjectField(
                 _data, typeof(UniLyricData), false, GUILayout.Width(160));
@@ -275,7 +272,6 @@ namespace UniLyricSync.Editor
 
             GUILayout.Space(8);
 
-            // ── Play / Stop ───────────────────────────────────────────────────
             GUI.enabled = _data != null && _data.audioClip != null;
             if (_isPlaying)
             {
@@ -291,7 +287,6 @@ namespace UniLyricSync.Editor
 
             GUILayout.Space(4);
 
-            // ── Set Lyrics ────────────────────────────────────────────────────
             if (GUILayout.Button("Set Lyrics", GUILayout.Width(80)))
             {
                 _lyricsEditBuffer = _data.lyricsText;
@@ -300,7 +295,6 @@ namespace UniLyricSync.Editor
 
             GUILayout.Space(4);
 
-            // ── AudioClip quick assign ────────────────────────────────────────
             EditorGUI.BeginChangeCheck();
             AudioClip newClip = (AudioClip)EditorGUILayout.ObjectField(
                 _data.audioClip, typeof(AudioClip), false, GUILayout.Width(160));
@@ -318,7 +312,6 @@ namespace UniLyricSync.Editor
 
             GUILayout.FlexibleSpace();
 
-            // ── Zoom controls ─────────────────────────────────────────────────
             GUI.enabled = _data != null && _data.audioClip != null;
             if (GUILayout.Button("−", GUILayout.Width(22)))
             { _zoom = Mathf.Max(MinZoom, _zoom / 1.5f); ClampScroll(); }
@@ -331,21 +324,19 @@ namespace UniLyricSync.Editor
 
             GUILayout.Space(6);
 
-            // ── End Marker ────────────────────────────────────────────────────
             GUI.enabled = _data != null && _data.audioClip != null;
-            GUI.color   = new Color(0.6f, 0.85f, 1f);
+            GUI.color = new Color(0.6f, 0.85f, 1f);
             if (GUILayout.Button("⏹ End", GUILayout.Width(52)))
             {
                 Undo.RecordObject(_data, "Set End Marker");
                 _data.endMarkerTime = _playheadTime;
                 EditorUtility.SetDirty(_data);
             }
-            GUI.color   = Color.white;
+            GUI.color = Color.white;
             GUI.enabled = true;
 
             GUILayout.Space(6);
 
-            // ── Time display ──────────────────────────────────────────────────
             float clipLen = _data.audioClip != null ? _data.audioClip.length : 0f;
             GUILayout.Label(
                 $"{FormatTime(_playheadTime)} / {FormatTime(clipLen)}",
@@ -353,7 +344,6 @@ namespace UniLyricSync.Editor
 
             GUILayout.Space(4);
 
-            // ── Clear All ─────────────────────────────────────────────────────
             GUI.color = new Color(1f, 0.6f, 0.6f);
             if (GUILayout.Button("Clear All", GUILayout.Width(70)))
             {
@@ -381,8 +371,6 @@ namespace UniLyricSync.Editor
         {
             EditorGUI.DrawRect(new Rect(0, _rulerRect.y, position.width, RulerHeight),
                                new Color(0.15f, 0.15f, 0.15f, 1f));
-
-            // Label column background
             EditorGUI.DrawRect(new Rect(0, _rulerRect.y, LabelWidth, RulerHeight),
                                new Color(0.18f, 0.18f, 0.18f, 1f));
 
@@ -397,18 +385,15 @@ namespace UniLyricSync.Editor
                 float x = TimeToX(t);
                 if (x < _rulerRect.x) continue;
 
-                // Tick line
                 EditorGUI.DrawRect(new Rect(x, _rulerRect.y + _rulerRect.height * 0.55f,
                                             0.5f, _rulerRect.height * 0.45f), tickColor);
 
-                // Label
                 GUI.color = new Color(0.65f, 0.65f, 0.65f);
                 GUI.Label(new Rect(x + 2, _rulerRect.y + 2, 48f, 14f),
                           FormatTime(t), EditorStyles.miniLabel);
                 GUI.color = Color.white;
             }
 
-            // Playhead tick on ruler
             DrawPlayheadLine(_rulerRect);
         }
 
@@ -417,11 +402,9 @@ namespace UniLyricSync.Editor
         // ══════════════════════════════════════════════════════════════════════
         private void DrawAudioTrack(Rect labelRect)
         {
-            // Background
             EditorGUI.DrawRect(new Rect(0, _audioTrackRect.y, position.width, AudioTrackHeight),
                                new Color(0.13f, 0.19f, 0.28f, 1f));
 
-            // Label column
             EditorGUI.DrawRect(labelRect, new Color(0.16f, 0.16f, 0.16f, 1f));
             GUI.Label(new Rect(labelRect.x + 8, labelRect.y + 6, labelRect.width - 10, 16f),
                       "Audio", _trackLabelStyle);
@@ -429,14 +412,12 @@ namespace UniLyricSync.Editor
                 GUI.Label(new Rect(labelRect.x + 8, labelRect.y + 22, labelRect.width - 10, 14f),
                           _data.audioClip.name, EditorStyles.miniLabel);
 
-            // Waveform texture — draw only the visible slice based on zoom/scroll
             if (_data.waveformTexture != null)
             {
-                // UV rect: which portion of the texture to show
-                float uvW     = 1f / _zoom;
-                float uvX     = _scrollX * (1f - uvW);
+                float uvW = 1f / _zoom;
+                float uvX = _scrollX * (1f - uvW);
                 uvX = Mathf.Clamp(uvX, 0f, 1f - uvW);
-                Rect uvRect   = new Rect(uvX, 0f, uvW, 1f);
+                Rect uvRect = new Rect(uvX, 0f, uvW, 1f);
                 GUI.DrawTextureWithTexCoords(_audioTrackRect, _data.waveformTexture, uvRect);
             }
             else if (_data.audioClip != null)
@@ -455,7 +436,6 @@ namespace UniLyricSync.Editor
                 GUI.color = Color.white;
             }
 
-            // Clip name tag
             if (_data.audioClip != null)
             {
                 GUI.color = new Color(0.35f, 0.65f, 0.95f, 1f);
@@ -474,11 +454,9 @@ namespace UniLyricSync.Editor
         // ══════════════════════════════════════════════════════════════════════
         private void DrawTriggerTrack(Rect labelRect)
         {
-            // Background
             EditorGUI.DrawRect(new Rect(0, _triggerTrackRect.y, position.width, TriggerTrackHeight),
                                new Color(0.15f, 0.17f, 0.13f, 1f));
 
-            // Label column
             EditorGUI.DrawRect(labelRect, new Color(0.16f, 0.16f, 0.16f, 1f));
             GUI.Label(new Rect(labelRect.x + 8, labelRect.y + 6, labelRect.width - 10, 16f),
                       "Triggers", _trackLabelStyle);
@@ -487,7 +465,6 @@ namespace UniLyricSync.Editor
                       $"{_data.markers.Count} markers", EditorStyles.miniLabel);
             GUI.color = Color.white;
 
-            // Hint text when empty
             if (_data.markers.Count == 0 && _data.audioClip != null)
             {
                 GUI.color = new Color(1, 1, 1, 0.3f);
@@ -497,11 +474,9 @@ namespace UniLyricSync.Editor
                 GUI.color = Color.white;
             }
 
-            // Draw each marker
             for (int i = 0; i < _data.markers.Count; i++)
                 DrawMarker(i);
 
-            // Draw end marker line
             if (_data.endMarkerTime > 0f)
             {
                 float ex = TimeToX(_data.endMarkerTime);
@@ -516,7 +491,6 @@ namespace UniLyricSync.Editor
 
             DrawPlayheadLine(_triggerTrackRect);
 
-            // Border
             EditorGUI.DrawRect(new Rect(0, _triggerTrackRect.y + TriggerTrackHeight - 0.5f,
                                         position.width, 0.5f),
                                new Color(0, 0, 0, 0.5f));
@@ -526,21 +500,17 @@ namespace UniLyricSync.Editor
         {
             UniLyricMarker m = _data.markers[index];
             float x = TimeToX(m.time);
-
             bool selected = (index == _selectedMarker);
 
-            // Vertical bar
             Color barCol = selected ? new Color(1f, 0.85f, 0.2f) : new Color(0.9f, 0.75f, 0.1f);
             EditorGUI.DrawRect(
                 new Rect(x - MarkerWidth * 0.5f, _triggerTrackRect.y,
                          MarkerWidth, TriggerTrackHeight),
                 barCol);
 
-            // Diamond head at top
             float dSize = selected ? 7f : 5f;
             DrawDiamond(new Vector2(x, _triggerTrackRect.y + 4), dSize, barCol);
 
-            // Word label tag
             if (!string.IsNullOrEmpty(m.word))
             {
                 float tagW = m.word.Length * 7f + 10f;
@@ -562,8 +532,6 @@ namespace UniLyricSync.Editor
 
             Event e = Event.current;
 
-            // ══ FIX 1 — Playhead scrub on ruler + audio track ═════════════════
-            // Must be BEFORE triggerTrackRect guard. Supports click AND drag.
             bool inScrubZone = _rulerRect.Contains(e.mousePosition) ||
                                _audioTrackRect.Contains(e.mousePosition);
 
@@ -605,16 +573,12 @@ namespace UniLyricSync.Editor
                 }
             }
 
-            // ══ FIX 3 — Marker drag uses wordIndex, not list index ═════════════
-            // After SortMarkers() the list index shifts — wordIndex never changes.
-            // Also: sort only on MouseUp, NOT during drag, so other markers stay put.
             if (_isDragging && _draggingMarker >= 0)
             {
                 if (e.type == EventType.MouseDrag)
                 {
                     float newTime = Mathf.Clamp(XToTime(e.mousePosition.x), 0f, _data.audioClip.length);
 
-                    // Find the marker by its stable wordIndex
                     int idx = _data.markers.FindIndex(m => m.wordIndex == _draggingMarkerWordIndex);
                     if (idx >= 0)
                     {
@@ -622,7 +586,6 @@ namespace UniLyricSync.Editor
                         UniLyricMarker marker = _data.markers[idx];
                         marker.time = newTime;
                         _data.markers[idx] = marker;
-                        // intentionally NOT calling SortMarkers() here
                         EditorUtility.SetDirty(_data);
                         Repaint();
                     }
@@ -631,10 +594,10 @@ namespace UniLyricSync.Editor
 
                 if (e.type == EventType.MouseUp)
                 {
-                    _data.SortMarkers(); // sort once on release
+                    _data.SortMarkers();
                     EditorUtility.SetDirty(_data);
-                    _isDragging              = false;
-                    _draggingMarker          = -1;
+                    _isDragging = false;
+                    _draggingMarker = -1;
                     _draggingMarkerWordIndex = -1;
                     Repaint();
                     e.Use();
@@ -644,16 +607,15 @@ namespace UniLyricSync.Editor
 
             if (!_triggerTrackRect.Contains(e.mousePosition)) return;
 
-            // ── Left click: select+drag or add new ────────────────────────────
             if (e.type == EventType.MouseDown && e.button == 0)
             {
                 int hit = HitTestMarker(e.mousePosition.x);
                 if (hit >= 0)
                 {
-                    _selectedMarker          = hit;
-                    _draggingMarker          = hit;
+                    _selectedMarker = hit;
+                    _draggingMarker = hit;
                     _draggingMarkerWordIndex = _data.markers[hit].wordIndex;
-                    _isDragging              = true;
+                    _isDragging = true;
                 }
                 else
                 {
@@ -662,7 +624,6 @@ namespace UniLyricSync.Editor
                 e.Use();
             }
 
-            // ── Right click → delete ──────────────────────────────────────────
             if (e.type == EventType.MouseDown && e.button == 1)
             {
                 int hit = HitTestMarker(e.mousePosition.x);
@@ -685,15 +646,15 @@ namespace UniLyricSync.Editor
         }
 
         // ══════════════════════════════════════════════════════════════════════
-        // SCENE PREVIEW
+        // SCENE PREVIEW  — dynamic row height
         // ══════════════════════════════════════════════════════════════════════
         private void DrawPreview()
         {
+            // Draw background for the initial rect first
             EditorGUI.DrawRect(_previewRect, new Color(0.07f, 0.07f, 0.07f, 1f));
             EditorGUI.DrawRect(new Rect(0, _previewRect.y, position.width, 0.5f),
                                new Color(0, 0, 0, 0.6f));
 
-            // Label
             GUI.color = new Color(0.5f, 0.5f, 0.5f);
             GUI.Label(new Rect(8, _previewRect.y + 4, 160, 14f),
                       "scene preview — TextMeshPro", EditorStyles.miniLabel);
@@ -704,12 +665,30 @@ namespace UniLyricSync.Editor
             string[] words = _data.Words;
             int activeIndex = GetActiveWordIndex();
 
-            // Lay words out horizontally, word-wrap at window edge
             float startX = LabelWidth + 12f;
-            float cx = startX;
-            float cy = _previewRect.y + 20f;
             float wordH = 26f;
             float padding = 6f;
+
+            // ── Dry-run: count rows so we can resize rect before drawing ──────
+            int totalRows = CountPreviewRows(words, startX, wordH, padding);
+
+            float neededH = 20f + totalRows * wordH + 8f;
+            float actualH = Mathf.Max(PreviewHeight, neededH);
+
+            // If height changed, redraw background to cover the full resized rect
+            if (Mathf.Abs(actualH - _previewRect.height) > 0.5f)
+            {
+                _previewRect = new Rect(_previewRect.x, _previewRect.y,
+                                        _previewRect.width, actualH);
+                EditorGUI.DrawRect(_previewRect, new Color(0.07f, 0.07f, 0.07f, 1f));
+
+                // Push inspector strip down to sit below the expanded preview
+                _inspectorRect = new Rect(0, _previewRect.yMax, position.width, InspectorHeight);
+            }
+
+            // ── Draw pass ─────────────────────────────────────────────────────
+            float cx = startX;
+            float cy = _previewRect.y + 20f;
 
             for (int i = 0; i < words.Length; i++)
             {
@@ -720,17 +699,35 @@ namespace UniLyricSync.Editor
 
                 float wordW = style.CalcSize(new GUIContent(words[i])).x + padding;
 
-                // Wrap to next line if needed
                 if (cx + wordW > position.width - 16f)
                 {
                     cx = startX;
                     cy += wordH;
-                    if (cy > _previewRect.yMax - wordH) break; // no more room
                 }
 
                 GUI.Label(new Rect(cx, cy, wordW, wordH), words[i], style);
                 cx += wordW + 4f;
             }
+        }
+
+        // Dry-run layout pass — counts how many rows the word list needs.
+        private int CountPreviewRows(string[] words, float startX, float wordH, float padding)
+        {
+            float cx = startX;
+            int rows = 1;
+
+            foreach (string word in words)
+            {
+                float wordW = _previewWordStyle.CalcSize(new GUIContent(word)).x + padding;
+
+                if (cx + wordW > position.width - 16f)
+                {
+                    cx = startX;
+                    rows++;
+                }
+                cx += wordW + 4f;
+            }
+            return rows;
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -764,8 +761,7 @@ namespace UniLyricSync.Editor
                 x += 42f;
 
                 EditorGUI.BeginChangeCheck();
-                float newTime = EditorGUI.FloatField(
-                    new Rect(x, y - 1, 55, 16f), m.time);
+                float newTime = EditorGUI.FloatField(new Rect(x, y - 1, 55, 16f), m.time);
                 if (EditorGUI.EndChangeCheck())
                 {
                     Undo.RecordObject(_data, "Edit Trigger Time");
@@ -775,7 +771,6 @@ namespace UniLyricSync.Editor
                     _data.SortMarkers();
                     EditorUtility.SetDirty(_data);
                 }
-                x += 65f;
             }
             else
             {
@@ -798,16 +793,12 @@ namespace UniLyricSync.Editor
             float py = 40f;
             _lyricsPopupRect = new Rect(px, py, pw, ph);
 
-            // Shadow
             EditorGUI.DrawRect(new Rect(px + 4, py + 4, pw, ph),
                                new Color(0, 0, 0, 0.4f));
-            // Background
             EditorGUI.DrawRect(_lyricsPopupRect, new Color(0.2f, 0.2f, 0.2f, 1f));
-            // Border
             DrawRectOutline(_lyricsPopupRect, new Color(0.4f, 0.4f, 0.4f), 1f);
 
             GUILayout.BeginArea(_lyricsPopupRect);
-
             GUILayout.Label("Edit Lyrics", EditorStyles.boldLabel);
 
             _lyricsEditBuffer = EditorGUILayout.TextArea(
@@ -823,7 +814,6 @@ namespace UniLyricSync.Editor
                 EditorStyles.centeredGreyMiniLabel);
 
             GUILayout.BeginHorizontal();
-
             if (GUILayout.Button("Apply"))
             {
                 Undo.RecordObject(_data, "Set Lyrics");
@@ -832,10 +822,8 @@ namespace UniLyricSync.Editor
                 _showLyricsPopup = false;
                 Repaint();
             }
-
             if (GUILayout.Button("Cancel"))
                 _showLyricsPopup = false;
-
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
@@ -846,35 +834,27 @@ namespace UniLyricSync.Editor
         private void StartPreview()
         {
             if (_data == null || _data.audioClip == null) return;
-
-            _isPlaying     = true;
+            _isPlaying = true;
             _playStartTime = EditorApplication.timeSinceStartup - _playheadTime;
-
-            // PlayPreviewClip does not support startSample in all Unity versions,
-            // so we invoke it and immediately set the preview position via
-            // SetPreviewClipSamplePosition if available, otherwise fall back.
             PlayClipAtTime(_data.audioClip, _playheadTime);
         }
 
         private void StopPreview()
         {
-            _isPlaying    = false;
+            _isPlaying = false;
             _playheadTime = 0f;
             StopAllClips();
         }
 
-        // Unity internal audio preview — works in Unity 6
         private static System.Reflection.MethodInfo _playClipMethod;
         private static System.Reflection.MethodInfo _stopClipsMethod;
-        private static System.Reflection.MethodInfo _setSampleMethod;
 
         private static void PlayClipAtTime(AudioClip clip, float startTime)
         {
             if (_playClipMethod == null)
             {
                 var asm = typeof(AudioImporter).Assembly;
-                var t   = asm.GetType("UnityEditor.AudioUtil");
-                // Signature: PlayPreviewClip(AudioClip, int startSample, bool loop)
+                var t = asm.GetType("UnityEditor.AudioUtil");
                 _playClipMethod = t?.GetMethod("PlayPreviewClip",
                     System.Reflection.BindingFlags.Static |
                     System.Reflection.BindingFlags.Public,
@@ -883,10 +863,8 @@ namespace UniLyricSync.Editor
                     null);
             }
 
-            // Convert startTime to sample index
             int startSample = Mathf.RoundToInt(startTime * clip.frequency);
             startSample = Mathf.Clamp(startSample, 0, clip.samples - 1);
-
             _playClipMethod?.Invoke(null, new object[] { clip, startSample, false });
         }
 
@@ -895,7 +873,7 @@ namespace UniLyricSync.Editor
             if (_stopClipsMethod == null)
             {
                 var asm = typeof(AudioImporter).Assembly;
-                var t   = asm.GetType("UnityEditor.AudioUtil");
+                var t = asm.GetType("UnityEditor.AudioUtil");
                 _stopClipsMethod = t?.GetMethod("StopAllPreviewClips",
                     System.Reflection.BindingFlags.Static |
                     System.Reflection.BindingFlags.Public);
@@ -909,7 +887,7 @@ namespace UniLyricSync.Editor
         private void AddMarkerAt(float time)
         {
             string[] words = _data.Words;
-            int nextWordIdx = _data.markers.Count; // auto-link to next word in sequence
+            int nextWordIdx = _data.markers.Count;
 
             if (nextWordIdx >= words.Length)
             {
@@ -919,7 +897,6 @@ namespace UniLyricSync.Editor
             }
 
             Undo.RecordObject(_data, "Add Trigger");
-
             _data.markers.Add(new UniLyricMarker
             {
                 time = time,
@@ -957,37 +934,27 @@ namespace UniLyricSync.Editor
             return active;
         }
 
-        // ── Coordinate helpers (zoom-aware) ───────────────────────────────────
-        // Must match the UV rect used in DrawTextureWithTexCoords exactly:
-        //   uvW  = 1 / zoom
-        //   uvX  = scrollX * (1 - uvW)   <- visible start in normalised time
-        // So: visibleStart = uvX, visibleEnd = uvX + uvW
-        // pixel x maps to:  normTime = uvX + (x - trackLeft)/trackWidth * uvW
-
         private float TimeToX(float t)
         {
             if (_data?.audioClip == null) return _audioTrackRect.x;
-            float uvW  = 1f / _zoom;
-            float uvX  = Mathf.Clamp(_scrollX * (1f - uvW), 0f, 1f - uvW);
-            float norm = t / _data.audioClip.length;         // 0..1
-            float frac = (norm - uvX) / uvW;                 // 0..1 within visible window
+            float uvW = 1f / _zoom;
+            float uvX = Mathf.Clamp(_scrollX * (1f - uvW), 0f, 1f - uvW);
+            float norm = t / _data.audioClip.length;
+            float frac = (norm - uvX) / uvW;
             return _audioTrackRect.x + frac * _audioTrackRect.width;
         }
 
         private float XToTime(float x)
         {
             if (_data?.audioClip == null) return 0f;
-            float uvW  = 1f / _zoom;
-            float uvX  = Mathf.Clamp(_scrollX * (1f - uvW), 0f, 1f - uvW);
-            float frac = (x - _audioTrackRect.x) / _audioTrackRect.width;  // 0..1 on screen
-            float norm = uvX + frac * uvW;                   // 0..1 in clip
+            float uvW = 1f / _zoom;
+            float uvX = Mathf.Clamp(_scrollX * (1f - uvW), 0f, 1f - uvW);
+            float frac = (x - _audioTrackRect.x) / _audioTrackRect.width;
+            float norm = uvX + frac * uvW;
             return Mathf.Clamp(norm * _data.audioClip.length, 0f, _data.audioClip.length);
         }
 
-        private void ClampScroll()
-        {
-            _scrollX = Mathf.Clamp01(_scrollX);
-        }
+        private void ClampScroll() => _scrollX = Mathf.Clamp01(_scrollX);
 
         private void DrawPlayheadLine(Rect trackRect)
         {
@@ -999,7 +966,6 @@ namespace UniLyricSync.Editor
 
         private void DrawDiamond(Vector2 centre, float halfSize, Color col)
         {
-            // Draw a diamond using two overlapping rects rotated 45° (approximated with 4 rects)
             EditorGUI.DrawRect(new Rect(centre.x - halfSize, centre.y - 1,
                                         halfSize * 2, 2), col);
             EditorGUI.DrawRect(new Rect(centre.x - 1, centre.y - halfSize,
@@ -1029,7 +995,7 @@ namespace UniLyricSync.Editor
             EditorGUI.DrawRect(new Rect(r.xMax - thickness, r.y, thickness, r.height), col);
         }
 
-        private void SaveLastDataGuid()
+        public void SaveLastDataGuid()
         {
             if (_data == null) return;
             string path = AssetDatabase.GetAssetPath(_data);
@@ -1037,7 +1003,6 @@ namespace UniLyricSync.Editor
             EditorPrefs.SetString("UniLyricSync_LastDataGuid", guid);
         }
 
-        // ── Style initialisation ───────────────────────────────────────────────
         private void InitStyles()
         {
             if (_stylesInitialised) return;

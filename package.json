@@ -1,6 +1,6 @@
 {
   "name": "com.unilyric.sync",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "UniLyricSync",
   "description": "Word-by-word lyric highlight editor for Unity 6. Timeline-inspired EditorWindow synced to AudioClip. TextMeshPro vertex colour animation at runtime.",
   "unity": "6000.0",

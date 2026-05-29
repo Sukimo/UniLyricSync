@@ -42,10 +42,14 @@ namespace UniLyricSync
         // Per-word current colours (lerp state)
         Color[] _currentColors;
 
-        // Vertex cache for geometry effects
-        // Key insight: we cache the mesh vertices ONCE after ForceMeshUpdate,
-        // then restore them each frame before applying offsets.
-        // Without restore, offsets accumulate and blow up the mesh.
+        // ── V1.1 character-level map ──────────────────────────────────────────
+        // _charToWordIndex[i] = which word index character i belongs to.
+        // -1 means the character belongs to no word (space, newline, etc.)
+        int[] _charToWordIndex;
+
+        // Vertex cache for geometry effects.
+        // Cache mesh vertices ONCE after ForceMeshUpdate,
+        // restore each frame before applying offsets so they don't accumulate.
         Vector3[] _baseVertices;
         bool _baseVerticesCached = false;
 
@@ -71,10 +75,8 @@ namespace UniLyricSync
                 _endMarkerTriggered = true;
                 _currentWordIndex = -2;   // fade all words to doneColor
 
-                // Stop audio at end marker position
                 _audioSource.Stop();
 
-                // Fire complete event + handle loop
                 _finished = true;
                 OnPlaybackComplete?.Invoke();
                 if (loop)
@@ -82,7 +84,6 @@ namespace UniLyricSync
                     Play();
                     return;
                 }
-                // Still apply colours this frame so the fade begins
                 if (useBuiltInEffect) ApplyVertexColors();
                 return;
             }
@@ -119,17 +120,17 @@ namespace UniLyricSync
             tmpText.text = data.lyricsText;
             tmpText.ForceMeshUpdate();
 
-            // Cache base vertices for geometry effects
             CacheBaseVertices();
-
+            BuildCharToWordMap();   // V1.1 — must come after ForceMeshUpdate
             InitColorArrays();
+
             _currentWordIndex = -1;
             _nextMarkerIndex = 0;
             _finished = false;
             _endMarkerTriggered = false;
 
             _audioSource.clip = data.audioClip;
-            _audioSource.loop = false;   // loop handled in Update
+            _audioSource.loop = false;
             _audioSource.Play();
         }
 
@@ -189,33 +190,114 @@ namespace UniLyricSync
                 _currentColors[i] = data.defaultColor;
         }
 
+        // ── TODO: Rich text compatibility test ───────────────────────────────
+        // BuildCharToWordMap relies on words[w].Length matching TMP's visible
+        // character count per word. This breaks when lyrics contain rich text tags
+        // e.g. "<b>Hello</b>" — TMP strips the tags before building characterInfo,
+        // so words[w].Length = 15 but TMP sees only 5 visible chars → map desync.
+        //
+        // Test cases to run before enabling rich text support:
+        //   1. "<b>word</b>"          — bold tag wrapping a single word
+        //   2. "<color=#FF0000>word</color>"  — inline color override
+        //   3. Mixed: "normal <b>bold</b> normal"
+        //   4. Punctuation inside tag: "<b>Hello,</b>"
+        //
+        // Fix path (if needed later):
+        //   Strip rich text tags from lyricsText before calling Split() in
+        //   UniLyricData.Words, so lengths stay in sync with what TMP renders.
+        //   System.Text.RegularExpressions.Regex.Replace(text, "<.*?>", "")
+        // ─────────────────────────────────────────────────────────────────────
+
+        // ── V1.1 Build char-to-word map ───────────────────────────────────────
+        // Strategy (Option B): walk characterInfo in order.
+        // Skip non-visible entries (spaces, newlines — isVisible = false).
+        // Group consecutive visible chars into words by matching data.Words[w].Length.
+        // Result: _charToWordIndex[charIndex] = wordIndex, or -1 if not part of a word.
+        void BuildCharToWordMap()
+        {
+            TMP_TextInfo ti = tmpText.textInfo;
+            int totalChars = ti.characterCount;
+
+            _charToWordIndex = new int[totalChars];
+            for (int i = 0; i < totalChars; i++)
+                _charToWordIndex[i] = -1;   // default: not part of any word
+
+            string[] words = data.Words;
+            if (words.Length == 0) return;
+
+            int wordIdx = 0;   // current position in data.Words[]
+            int charsInWord = 0;   // how many visible chars we've consumed in current word
+
+            for (int ci = 0; ci < totalChars; ci++)
+            {
+                TMP_CharacterInfo ch = ti.characterInfo[ci];
+
+                // Non-visible chars (spaces, newlines, zero-width) — skip,
+                // but only reset charsInWord if we've finished the current word.
+                // This lets punctuation attached to a word stay inside it.
+                if (!ch.isVisible)
+                {
+                    // If we were mid-word and hit a space, the word is done.
+                    // Advance to next word if we've consumed at least 1 char.
+                    if (charsInWord > 0)
+                    {
+                        wordIdx++;
+                        charsInWord = 0;
+                        if (wordIdx >= words.Length) break;
+                    }
+                    continue;
+                }
+
+                // Guard: don't overrun the words array
+                if (wordIdx >= words.Length) break;
+
+                // Assign this visible char to the current word
+                _charToWordIndex[ci] = wordIdx;
+                charsInWord++;
+
+                // If we've consumed all chars in this word, move to the next.
+                // words[wordIdx].Length is the source-of-truth character count.
+                if (charsInWord >= words[wordIdx].Length)
+                {
+                    wordIdx++;
+                    charsInWord = 0;
+                    if (wordIdx >= words.Length) break;
+                }
+            }
+
+            // Sanity check — mismatch usually means lyrics text ≠ tmpText.text
+            if (wordIdx < words.Length)
+                Debug.LogWarning(
+                    $"[UniLyricPlayer] BuildCharToWordMap: only mapped {wordIdx}/{words.Length} words. " +
+                    "Check that tmpText.text matches data.lyricsText exactly.");
+        }
+
         // ── Vertex colour lerp ────────────────────────────────────────────────
         void ApplyVertexColors()
         {
             TMP_TextInfo textInfo = tmpText.textInfo;
-            if (textInfo == null || textInfo.wordCount == 0) return;
-            if (_currentColors == null) return;
+            if (textInfo == null || textInfo.characterCount == 0) return;
+            if (_currentColors == null || _charToWordIndex == null) return;
 
-            // Framerate-independent lerp:
-            //   lerpT = 1 - smoothness^deltaTime
-            //   smoothness = 0   → instant (lerpT = 1)
-            //   smoothness = 0.9 → slow    (lerpT ≈ 0.06 @ 60fps)
+            // Framerate-independent lerp factor
             float s = Mathf.Clamp01(data.transitionSmoothness);
-            float lerpT = 1f - Mathf.Pow(s, Time.deltaTime * 60f); //*
+            float lerpT = 1f - Mathf.Pow(s, Time.deltaTime * 60f);
 
             bool colorsDirty = false;
             bool verticesDirty = false;
 
-            // Restore base vertices before applying any effect offsets this frame
+            // Restore base vertices before applying geometry offsets this frame
             if (data.effect != HighlightEffect.ColorOnly && _baseVerticesCached)
                 RestoreBaseVertices(textInfo, ref verticesDirty);
 
-            for (int w = 0; w < textInfo.wordCount && w < data.Words.Length; w++)
+            // ── Advance lerp targets for each word ────────────────────────────
+            // We still need one colour per word — drive that from _currentWordIndex
+            // exactly as before; only the per-character write loop changes.
+            string[] words = data.Words;
+            for (int w = 0; w < words.Length; w++)
             {
                 Color target;
-
                 if (_currentWordIndex == -2)
-                    // end marker triggered — everything fades to done
                     target = data.doneColor;
                 else if (w == _currentWordIndex)
                     target = data.GetHighlightColorForWord(w);
@@ -225,37 +307,39 @@ namespace UniLyricSync
                     target = data.defaultColor;
 
                 _currentColors[w] = Color.Lerp(_currentColors[w], target, lerpT);
+            }
+
+            // ── Write colours + geometry per character ────────────────────────
+            int totalChars = textInfo.characterCount;
+            for (int ci = 0; ci < totalChars; ci++)
+            {
+                TMP_CharacterInfo ch = textInfo.characterInfo[ci];
+                if (!ch.isVisible) continue;
+
+                int wIdx = (ci < _charToWordIndex.Length) ? _charToWordIndex[ci] : -1;
+                if (wIdx < 0 || wIdx >= words.Length) continue;
 
                 // Geometry effect on active word only
                 if (data.effect != HighlightEffect.ColorOnly
-                    && w == _currentWordIndex
+                    && wIdx == _currentWordIndex
                     && _currentWordIndex >= 0
                     && _baseVerticesCached)
                 {
-                    ApplyGeometryEffect(textInfo, w, ref verticesDirty);
+                    ApplyGeometryEffect(textInfo, ci, ref verticesDirty);
                 }
 
                 // Write colour
-                TMP_WordInfo wordInfo = textInfo.wordInfo[w];
-                Color32 c32 = _currentColors[w];
+                int mi = ch.materialReferenceIndex;
+                int vi = ch.vertexIndex;
+                Color32[] cols = textInfo.meshInfo[mi].colors32;
+                if (vi + 3 >= cols.Length) continue;
 
-                for (int ci = wordInfo.firstCharacterIndex;
-                     ci < wordInfo.firstCharacterIndex + wordInfo.characterCount; ci++)
-                {
-                    var ch = textInfo.characterInfo[ci];
-                    if (!ch.isVisible) continue;
-
-                    int mi = ch.materialReferenceIndex;
-                    int vi = ch.vertexIndex;
-                    Color32[] cols = textInfo.meshInfo[mi].colors32;
-                    if (vi + 3 >= cols.Length) continue;
-
-                    cols[vi] = c32;
-                    cols[vi + 1] = c32;
-                    cols[vi + 2] = c32;
-                    cols[vi + 3] = c32;
-                    colorsDirty = true;
-                }
+                Color32 c32 = _currentColors[wIdx];
+                cols[vi] = c32;
+                cols[vi + 1] = c32;
+                cols[vi + 2] = c32;
+                cols[vi + 3] = c32;
+                colorsDirty = true;
             }
 
             var flags = TMP_VertexDataUpdateFlags.None;
@@ -265,43 +349,52 @@ namespace UniLyricSync
                 tmpText.UpdateVertexData(flags);
         }
 
-        void ApplyGeometryEffect(TMP_TextInfo textInfo, int wordIndex, ref bool dirty)
+        // ── V1.1 geometry effect — now takes charIndex directly ───────────────
+        void ApplyGeometryEffect(TMP_TextInfo textInfo, int ci, ref bool dirty)
         {
-            TMP_WordInfo wordInfo = textInfo.wordInfo[wordIndex];
+            TMP_CharacterInfo ch = textInfo.characterInfo[ci];
+            if (!ch.isVisible) return;
 
-            for (int ci = wordInfo.firstCharacterIndex;
-                 ci < wordInfo.firstCharacterIndex + wordInfo.characterCount; ci++)
+            int mi = ch.materialReferenceIndex;
+            int vi = ch.vertexIndex;
+            Vector3[] v = textInfo.meshInfo[mi].vertices;
+            if (vi + 3 >= v.Length) return;
+
+            if (data.effect == HighlightEffect.ScaleAndColor)
             {
-                var ch = textInfo.characterInfo[ci];
-                if (!ch.isVisible) continue;
-
-                int mi = ch.materialReferenceIndex;
-                int vi = ch.vertexIndex;
-                Vector3[] v = textInfo.meshInfo[mi].vertices;
-                if (vi + 3 >= v.Length) continue;
-
-                if (data.effect == HighlightEffect.ScaleAndColor)
-                {
-                    // scale from character centre
-                    Vector3 centre = (v[vi] + v[vi + 1] + v[vi + 2] + v[vi + 3]) * 0.25f;
-                    // sin oscillation: stays above 1.0, range = [1.0 .. scaleAmount]
-                    float t = (Mathf.Sin(Time.time * data.scaleSpeed) + 1f) * 0.5f;
-                    float scale = Mathf.Lerp(1f, data.scaleAmount, t);
-                    for (int k = 0; k < 4; k++)
-                        v[vi + k] = centre + (v[vi + k] - centre) * scale;
-                    dirty = true;
-                }
-                else if (data.effect == HighlightEffect.WaveAndColor)
-                {
-                    int localIdx = ci - wordInfo.firstCharacterIndex;
-                    float offset = Mathf.Sin(
-                        Time.time * data.waveSpeed + localIdx * data.waveSpread)
-                        * data.waveAmplitude;
-                    for (int k = 0; k < 4; k++)
-                        v[vi + k].y += offset;
-                    dirty = true;
-                }
+                Vector3 centre = (v[vi] + v[vi + 1] + v[vi + 2] + v[vi + 3]) * 0.25f;
+                float t = (Mathf.Sin(Time.time * data.scaleSpeed) + 1f) * 0.5f;
+                float scale = Mathf.Lerp(1f, data.scaleAmount, t);
+                for (int k = 0; k < 4; k++)
+                    v[vi + k] = centre + (v[vi + k] - centre) * scale;
+                dirty = true;
             }
+            else if (data.effect == HighlightEffect.WaveAndColor)
+            {
+                // localIdx = position of this char within its word
+                int wIdx = _charToWordIndex[ci];
+                int wordStart = FindWordStartCharIndex(textInfo, ci, wIdx);
+                int localIdx = ci - wordStart;
+
+                float offset = Mathf.Sin(
+                    Time.time * data.waveSpeed + localIdx * data.waveSpread)
+                    * data.waveAmplitude;
+                for (int k = 0; k < 4; k++)
+                    v[vi + k].y += offset;
+                dirty = true;
+            }
+        }
+
+        // Find the first characterInfo index that belongs to wordIndex wIdx,
+        // used to compute a character's local position within its word for the wave phase.
+        int FindWordStartCharIndex(TMP_TextInfo textInfo, int currentCi, int wIdx)
+        {
+            for (int ci = 0; ci < currentCi; ci++)
+            {
+                if (ci < _charToWordIndex.Length && _charToWordIndex[ci] == wIdx)
+                    return ci;
+            }
+            return currentCi; // fallback: treat as first char of word
         }
 
         // ── Vertex cache ──────────────────────────────────────────────────────
@@ -311,7 +404,6 @@ namespace UniLyricSync
             TMP_TextInfo ti = tmpText.textInfo;
             if (ti.meshInfo.Length == 0) { _baseVerticesCached = false; return; }
 
-            // Only need mesh[0] — most text uses one material
             Vector3[] src = ti.meshInfo[0].vertices;
             if (src == null) { _baseVerticesCached = false; return; }
 

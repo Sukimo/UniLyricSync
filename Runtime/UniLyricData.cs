@@ -111,7 +111,6 @@ namespace UniLyricSync
                 if (markers[i].wordIndex == wordIndex && markers[i].useOverrideColor)
                 {
                     Color c = markers[i].overrideColor;
-                    Debug.Log($"[UniLyricData] R: {c.r:F3} | G: {c.g:F3} | B: {c.b:F3} | A: {c.a:F3}");
                     c.a = Mathf.Max(c.a, 0.05f); // never fully transparent
                     return c;
                 }
